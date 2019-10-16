@@ -1,0 +1,95 @@
+Data Sources
+Spark SQL supports operating on a variety of data sources through the DataFrame interface. 
+A DataFrame can be operated on using relational transformations and can also be used to create a temporary view.
+Registering a DataFrame as a temporary view allows you to run SQL queries over its data. 
+This section describes the general methods for loading and saving data using the Spark Data Sources and
+then goes into specific options that are available for the built-in data sources.
+
+Generic Load/Save Functions
+In the simplest form, the default data source (parquet unless otherwise configured by spark.sql.sources.default) 
+will be used for all operations.
+
+df = spark.read.load("examples/src/main/resources/users.parquet")
+df.select("name", "favorite_color").write.save("namesAndFavColors.parquet")
+
+Manually Specifying Options
+You can also manually specify the data source that will be used along with any extra options that you 
+would like to pass to the data source. Data sources are specified by their fully qualified name (i.e., org.apache.spark.sql.parquet), 
+but for built-in sources you can also use their short names (json, parquet, jdbc, orc, libsvm, csv, text). 
+DataFrames loaded from any data source type can be converted into other types using this syntax.
+
+To load a JSON file you can use:
+df = spark.read.load("examples/src/main/resources/people.json", format="json")
+df.select("name", "age").write.save("namesAndAges.parquet", format="parquet")
+
+To load a CSV file you can use:
+--Find full example code at "examples/src/main/python/sql/datasource.py" in the Spark repo. powered by spark
+df = spark.read.load("examples/src/main/resources/people.csv",
+                     format="csv", sep=":", inferSchema="true", header="true")
+                     
+Run SQL on files directly
+Instead of using read API to load a file into DataFrame and query it, you can also query that file directly with SQL.
+
+df = spark.sql("SELECT * FROM parquet.`examples/src/main/resources/users.parquet`")
+
+Save Modes
+Save operations can optionally take a SaveMode, that specifies how to handle existing data if present. 
+It is important to realize that these save modes do not utilize any locking and are not atomic. 
+Additionally, when performing an Overwrite, the data will be deleted before writing out the new data.
+
+Scala/Java	Any Language	Meaning
+SaveMode.ErrorIfExists (default)	"error" or "errorifexists" (default)	When saving a DataFrame to a data source, 
+if data already exists, an exception is expected to be thrown.
+SaveMode.Append	"append"	When saving a DataFrame to a data source, if data/table already exists, 
+contents of the DataFrame are expected to be appended to existing data.
+SaveMode.Overwrite	"overwrite"	Overwrite mode means that when saving a DataFrame to a data source, 
+if data/table already exists, existing data is expected to be overwritten by the contents of the DataFrame.
+SaveMode.Ignore	"ignore"	Ignore mode means that when saving a DataFrame to a data source, if data already exists,
+the save operation is expected to not save the contents of the DataFrame and to not change the existing data. 
+This is similar to a CREATE TABLE IF NOT EXISTS in SQL.
+
+Bucketing, Sorting and Partitioning
+For file-based data source, it is also possible to bucket and sort or partition the output. 
+Bucketing and sorting are applicable only to persistent tables:
+
+df.write.bucketBy(42, "name").sortBy("age").saveAsTable("people_bucketed")
+
+while partitioning can be used with both save and saveAsTable when using the Dataset APIs.
+
+df.write.partitionBy("favorite_color").format("parquet").save("namesPartByColor.parquet")
+
+It is possible to use both partitioning and bucketing for a single table:
+
+df = spark.read.parquet("examples/src/main/resources/users.parquet")
+(df
+    .write
+    .partitionBy("favorite_color")
+    .bucketBy(42, "name")
+    .saveAsTable("people_partitioned_bucketed"))
+    
+partitionBy creates a directory structure as described in the Partition Discovery section. 
+Thus, it has limited applicability to columns with high cardinality. 
+In contrast bucketBy distributes data across a fixed number of buckets and can be used when a number of unique values is unbounded.
+
+Parquet Files
+Parquet is a columnar format that is supported by many other data processing systems.
+Spark SQL provides support for both reading and writing Parquet files that automatically preserves the schema of the original data.
+When writing Parquet files, all columns are automatically converted to be nullable for compatibility reasons.
+
+Loading Data Programmatically
+
+peopleDF = spark.read.json("examples/src/main/resources/people.json")
+
+# DataFrames can be saved as Parquet files, maintaining the schema information.
+peopleDF.write.parquet("people.parquet")
+
+# Read in the Parquet file created above.
+# Parquet files are self-describing so the schema is preserved.
+# The result of loading a parquet file is also a DataFrame.
+parquetFile = spark.read.parquet("people.parquet")
+
+# Parquet files can also be used to create a temporary view and then used in SQL statements.
+parquetFile.createOrReplaceTempView("parquetFile")
+teenagers = spark.sql("SELECT name FROM parquetFile WHERE age >= 13 AND age <= 19")
+teenagers.show()
+
